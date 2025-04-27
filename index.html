@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang='pt-BR'>
+<head>
+  <meta charset='utf-8'/>
+  <title>Kawa Trainer</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f7f7f9;
+      margin: 0;
+      padding: 0;
+      position: relative;
+    }
+    #bgImage {
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    z-index: 10000;       
+    pointer-events: none; 
+    }
+    header {
+      font-family: 'Segoe UI';
+      background: #ff75a1;
+      color: white;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      position: relative;
+      z-index: 1;
+    }
+    #restartButton {
+      left: 10px;
+      padding: 6px 12px;
+      font-size: 14px;
+      background: transparent;
+      color: white;
+      border: 2px solid white;
+      border-radius: 0;
+      font-family: 'Segoe UI', sans-serif;
+      cursor: pointer;
+      position: relative;
+      z-index: 1;
+    }
+    main {
+      padding: 24px;
+      position: relative;
+      z-index: 1;
+    }
+    .frame {
+      border: 2px solid #ccc;
+      border-radius: 6px;
+      padding: 12px;
+      background: white;
+      position: relative;
+      z-index: 1;
+    }
+    .hand {
+      font-family: 'Segoe UI Symbol', sans-serif;
+      font-size: 60px;
+      line-height: 1.1;
+      white-space: nowrap;
+      margin-bottom: 4px;
+    }
+    .titleSmall {
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+    }
+    #finalHand, #discardsContainer {
+      display: inline;
+    }
+    #impossibleWaits{
+      font-size: 40px;
+      font-family: 'Segoe UI Symbol', sans-serif;
+      display: none
+    }
+    #probableWaits{
+      font-size: 50px;
+      font-family: 'Segoe UI Symbol', sans-serif;
+      display: none
+    }
+    #showHandButton {
+      margin-bottom: 12px;
+      padding: 6px 12px;
+      font-size: 14px;
+      background: transparent;
+      color: black;
+      border: 2px solid black;
+      border-radius: 0;
+      font-family: 'Segoe UI', sans-serif;
+      cursor: pointer;
+      position: relative;
+      z-index: 1;
+    }
+  </style>
+</head>
+<body>
+  <!-- Tela de carregamento -->
+  <img id="bgImage" src="background.png" alt="" />
+
+  <header>
+    <h1 style='margin:0;font-size:20px'>Kawa Trainer</h1>
+    <button id="restartButton">Reiniciar</button>
+  </header>
+  <main>
+    <section class='frame'>
+      <h2 class='titleSmall'></h2>
+      <!-- Botão para mostrar a mão final -->
+      <h2 id='titleSmall1' style="display:none">Mão:</h2>
+      <button id='showHandButton'>Mostrar mão do oponente</button>
+      <div id='finalHand'></div>
+      <div id='discardsContainer'></div>
+      <h2 id='titleSmall2' style="display:none">Descartes e esperas que pode-se <i>supor</i> que o oponente não possui:</h2>
+      <div id='impossibleWaits'></div> <!-- Seção de esperas impossíveis -->
+      <h2 id='titleSmall3' style="display:none">Esperas possíveis:</h2>
+      <div id='probableWaits'></div> <!-- Seção de esperas prováveis -->
+
+    </section>
+  </main>
+  <script>
+
+    document.getElementById('restartButton').addEventListener('click', () => location.reload());
+
+    const HONORS_CODE = [0x1F000, 0x1F001, 0x1F002, 0x1F003, 0x1F006, 0x1F005, 0x1F004];
+    const HONORS = Array.from({
+        length: 7
+    }, (_, i) => 27 + i);
+    const SUITS = [0, 1, 2];
+    const TILE_UC = (() => {
+        const u = [];
+        for (let i = 0; i < 9; i++) u.push(String.fromCodePoint(0x1F007 + i));
+        for (let i = 0; i < 9; i++) u.push(String.fromCodePoint(0x1F019 + i));
+        for (let i = 0; i < 9; i++) u.push(String.fromCodePoint(0x1F010 + i));
+        return u.concat(HONORS_CODE.map(c => String.fromCodePoint(c)));
+    })();
+
+    function formatHand(cnt) {
+        const rows = [
+            [],
+            [],
+            [],
+            []
+        ];
+        cnt.forEach((n, i) => {
+            for (let k = 0; k < n; k++) rows[Math.floor(i / 9)].push(TILE_UC[i]);
+        });
+        return rows.map(arr => `<div class='hand'>${arr.join('')}</div>`).join('');
+    }
+
+    function randomChoice(arr) {
+        return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    function mutateTiles(cnt, n) {
+        for (let k = 0; k < n; k++) {
+
+            const idxs = cnt.flatMap((v, i) => Array(v).fill(i));
+            if (idxs.length === 0) break;
+            const from = randomChoice(idxs);
+            let to;
+            do {
+                to = Math.floor(Math.random() * 34);
+            } while (to === from);
+            cnt[from]--;
+            cnt[to]++;
+        }
+    }
+
+    function generateHandForYaku(yaku) {
+        const cnt = Array(34).fill(0);
+        const blocks = [];
+        let pair;
+        switch (yaku) {
+            case 'tanyao': {
+                for (let i = 0; i < 4; i++) {
+                    if (Math.random() < 0.5) {
+                        const rank = randomChoice([1, 2, 3, 4, 5, 6, 7]);
+                        const suit = randomChoice(SUITS);
+                        blocks.push([suit * 9 + rank, suit * 9 + rank, suit * 9 + rank]);
+                    } else {
+                        const start = randomChoice([1, 2, 3, 4, 5]);
+                        const suit = randomChoice(SUITS);
+                        blocks.push([suit * 9 + start, suit * 9 + start + 1, suit * 9 + start + 2]);
+                    }
+                }
+                const prank = randomChoice([1, 2, 3, 4, 5, 6, 7]);
+                const psuit = randomChoice(SUITS);
+                pair = psuit * 9 + prank;
+                break;
+            }
+            case 'honitsu': {
+                const useHonor = Math.random() < 0.2;
+                const suit = useHonor ? null : randomChoice(SUITS);
+                for (let i = 0; i < 4; i++) {
+                    if (suit === null || Math.random() < 0.3) {
+                        const t = randomChoice(HONORS);
+                        blocks.push([t, t, t]);
+                    } else if (Math.random() < 0.5) {
+                        const rank = randomChoice([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+                        blocks.push([suit * 9 + rank, suit * 9 + rank, suit * 9 + rank]);
+                    } else {
+                        const start = randomChoice([0, 1, 2, 3, 4, 5, 6]);
+                        blocks.push([suit * 9 + start, suit * 9 + start + 1, suit * 9 + start + 2]);
+                    }
+                }
+                pair = suit === null ? randomChoice(HONORS) : suit * 9 + randomChoice([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+                break;
+            }
+            case 'chinitsu': {
+                const suit = randomChoice(SUITS);
+                for (let i = 0; i < 4; i++) {
+                    if (Math.random() < 0.5) {
+                        const r = randomChoice([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+                        blocks.push([suit * 9 + r, suit * 9 + r, suit * 9 + r]);
+                    } else {
+                        const start = randomChoice([0, 1, 2, 3, 4, 5, 6]);
+                        blocks.push([suit * 9 + start, suit * 9 + start + 1, suit * 9 + start + 2]);
+                    }
+                }
+                pair = suit * 9 + randomChoice([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+                break;
+            }
+            case 'toitoi': {
+                const used = new Set();
+                for (let i = 0; i < 4; i++) {
+                    let t;
+                    do {
+                        t = Math.floor(Math.random() * 34);
+                    } while (used.has(t));
+                    used.add(t);
+                    blocks.push([t, t, t]);
+                }
+                let p;
+                do {
+                    p = Math.floor(Math.random() * 34);
+                } while (used.has(p));
+                pair = p;
+                break;
+            }
+            case 'chanta': {
+                for (let i = 0; i < 4; i++) {
+                    if (Math.random() < 0.5) {
+                        const rank = randomChoice([0, 8]);
+                        const suit = randomChoice(SUITS);
+                        blocks.push([suit * 9 + rank, suit * 9 + rank, suit * 9 + rank]);
+                    } else {
+                        const start = randomChoice([0, 6]);
+                        const suit = randomChoice(SUITS);
+                        blocks.push([suit * 9 + start, suit * 9 + start + 1, suit * 9 + start + 2]);
+                    }
+                }
+                const prank = randomChoice([0, 8]);
+                const psuit = randomChoice(SUITS);
+                pair = psuit * 9 + prank;
+                break;
+            }
+            case 'junchan': {
+                for (let i = 0; i < 4; i++) {
+                    if (Math.random() < 0.4) {
+                        const t = randomChoice(HONORS);
+                        blocks.push([t, t, t]);
+                    } else if (Math.random() < 0.6) {
+                        const rank = randomChoice([0, 8]);
+                        const suit = randomChoice(SUITS);
+                        blocks.push([suit * 9 + rank, suit * 9 + rank, suit * 9 + rank]);
+                    } else {
+                        const start = randomChoice([0, 6]);
+                        const suit = randomChoice(SUITS);
+                        blocks.push([suit * 9 + start, suit * 9 + start + 1, suit * 9 + start + 2]);
+                    }
+                }
+                const allPair = [...HONORS, ...SUITS.map(s => s * 9 + 0), ...SUITS.map(s => s * 9 + 8)];
+                pair = randomChoice(allPair);
+                break;
+            }
+            default:
+                console.warn('Yaku não implementado:', yaku);
+        }
+        blocks.forEach(b => b.forEach(i => cnt[i]++));
+        if (pair != null) cnt[pair] += 2;
+        return cnt;
+    }
+
+    const YAKUS = ['tanyao', 'honitsu', 'chinitsu', 'toitoi', 'chanta', 'junchan'];
+
+    const TERMINALS_HONORS = [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33];
+
+    function calcShanten(cntOrig) {
+        const cnt = cntOrig.slice();
+        let best = 8;
+        const exclude = new Set();
+        for (let s = 0; s < 3; s++)
+            for (let r = 0; r <= 6; r++) {
+                const i = s * 9 + r;
+                if (cnt[i] >= 2 && cnt[i + 1] >= 2 && cnt[i + 2] >= 2) {
+                    exclude.add(i);
+                    exclude.add(i + 1);
+                    exclude.add(i + 2);
+                }
+            }
+        const visited = new Set();
+
+        function dfs(c, m, t, h) {
+            if (best <= -2) return;
+            const key = c.join(',') + '|' + m + '|' + t + '|' + h;
+            if (visited.has(key)) return;
+            visited.add(key);
+            const inc = t + h;
+            const sh = 8 - 2 * m - Math.min(inc, 4 - m) - Math.min(1, Math.max(0, m + inc - 4));
+            if (sh < best) best = sh;
+            if (sh <= 0) return;
+            for (let i = 0; i < 34; i++) {
+                if (!c[i]) continue;
+                const s = Math.floor(i / 9),
+                    pos = i % 9;
+                if (c[i] >= 3) {
+                    c[i] -= 3;
+                    dfs(c, m + 1, t, h);
+                    c[i] += 3;
+                }
+                if (s < 3 && pos <= 6 && c[i + 1] && c[i + 2]) {
+                    c[i]--;
+                    c[i + 1]--;
+                    c[i + 2]--;
+                    dfs(c, m + 1, t, h);
+                    c[i]++;
+                    c[i + 1]++;
+                    c[i + 2]++;
+                }
+                if (c[i] >= 2 && !exclude.has(i)) {
+                    c[i] -= 2;
+                    dfs(c, m, t, 1);
+                    c[i] += 2;
+                }
+                if (s < 3 && pos <= 7 && c[i + 1]) {
+                    c[i]--;
+                    c[i + 1]--;
+                    dfs(c, m, t + 1, h);
+                    c[i]++;
+                    c[i + 1]++;
+                }
+                if (s < 3 && pos <= 6 && c[i + 2]) {
+                    c[i]--;
+                    c[i + 2]--;
+                    dfs(c, m, t + 1, h);
+                    c[i]++;
+                    c[i + 2]++;
+                }
+                return;
+            }
+        }
+        dfs(cnt.slice(), 0, 0, 0);
+        for (let i = 0; i < 34; i++)
+            if (cnt[i] >= 2 && !exclude.has(i)) {
+                cnt[i]--;
+                dfs(cnt.slice(), 0, 0, 1);
+                cnt[i]++;
+            }
+        const basicShanten = best + 2;
+        const pairCount = cntOrig.reduce((a, v) => a + (v >= 2 ? 1 : 0), 0);
+        const chiitoitsuShanten = 8 - pairCount;
+        let distinctTH = 0,
+            pairTH = 0;
+        for (const i of TERMINALS_HONORS) {
+            if (cntOrig[i] > 0) distinctTH++;
+            if (cntOrig[i] > 1) pairTH++;
+        }
+        const kokushiShanten = 13 - distinctTH - Math.min(pairTH, 1);
+        return Math.min(basicShanten, chiitoitsuShanten, kokushiShanten) ;
+    }
+
+    function classifyBlocks(hand) {
+        const tmp = [...hand],
+            map = Array.from({
+                length: 34
+            }, () => []);
+        const push = (k, tiles) => tiles.forEach(t => map[t].push(k));
+        for (let i = 0; i < 34; i++)
+            while (tmp[i] >= 3) {
+                push('pon', [i, i, i]);
+                tmp[i] -= 3;
+            }
+            [0, 9, 18].forEach(s => {
+                for (let i = s; i < s + 7; i++)
+                    while (tmp[i] && tmp[i + 1] && tmp[i + 2]) {
+                        push('chi', [i, i + 1, i + 2]);
+                        tmp[i]--;
+                        tmp[i + 1]--;
+                        tmp[i + 2]--;
+                    }
+            });
+        for (let i = 0; i < 34; i++)
+            if (tmp[i] >= 2) {
+                push('pair', [i, i]);
+                tmp[i] -= 2;
+                break;
+            }
+            [0, 9, 18]. forEach(s => {
+            [s, s + 7].forEach(i => {
+                while (tmp[i] && tmp[i + 1]) {
+                    push('pen', [i, i + 1]);
+                    tmp[i]--;
+                    tmp[i + 1]--;
+                }
+            });
+            for (let i = s + 1; i < s + 7; i++)
+                while (tmp[i] && tmp[i + 1]) {
+                    push('ryan', [i, i + 1]);
+                    tmp[i]--;
+                    tmp[i + 1]--;
+                }
+        });
+        [0, 9, 18].forEach(s => {
+            for (let i = s; i < s + 5; i++)
+                while (tmp[i] && tmp[i + 2] && tmp[i + 4]) {
+                    push('gap3', [i, i + 2, i + 4]);
+                    tmp[i]--;
+                    tmp[i + 2]--;
+                    tmp[i + 4]--;
+                }
+        });
+        for (let i = 0; i < 34; i++)
+            while (tmp[i]--) {
+                push('sing', [i]);
+            }
+        return map;
+    }
+
+    function getGroups(cntOrig) {
+        const cnt = cntOrig.slice();
+        const groups = [];
+
+        for (let i = 0; i < 34; i++) {
+            while (cnt[i] >= 3) {
+                groups.push([i, i, i]);
+                cnt[i] -= 3;
+            }
+        }
+
+        [0, 9, 18].forEach(s => {
+            for (let i = s; i < s + 7; i++) {
+                while (cnt[i] && cnt[i + 1] && cnt[i + 2]) {
+                    groups.push([i, i + 1, i + 2]);
+                    cnt[i]--;
+                    cnt[i + 1]--;
+                    cnt[i + 2]--;
+                }
+            }
+        });
+
+        for (let i = 0; i < 34; i++) {
+            if (cnt[i] >= 2) {
+                groups.push([i, i]);
+                cnt[i] -= 2;
+            }
+        }
+
+        [0, 9, 18].forEach(s => {
+            for (let i = s; i < s + 8; i++) {
+                while (cnt[i] && cnt[i + 1]) {
+                    groups.push([i, i + 1]);
+                    cnt[i]--;
+                    cnt[i + 1]--;
+                }
+            }
+        });
+
+        for (let i = 0; i < 34; i++) {
+            while (cnt[i] > 0) {
+                groups.push([i]);
+                cnt[i]--;
+            }
+        }
+
+        return groups;
+    }
+
+    const shantenCache = new Map();
+
+    function shantenCached(hand) {
+        const key = hand.join(',');
+        if (shantenCache.has(key)) return shantenCache.get(key);
+        const v = calcShanten(hand);
+        shantenCache.set(key, v);
+        return v;
+    }
+    const acceptanceCache = new Map();
+
+    function computeTileAcceptanceCached(hand, poolSize) {
+        const key = hand.join(',') + '|' + poolSize;
+        if (acceptanceCache.has(key)) return acceptanceCache.get(key);
+        const orig = shantenCached(hand);
+        const ac = Array(34).fill(0);
+        for (let i = 0; i < 34; i++)
+            if (hand[i]) {
+                hand[i]--;
+                for (let j = 0; j < 34; j++)
+                    if (hand[j] < 4) {
+                        hand[j]++;
+                        if (shantenCached(hand) < orig) ac[i]++;
+                        hand[j]--;
+                    }
+                hand[i]++;
+            }
+        acceptanceCache.set(key, ac);
+        return ac;
+    }
+
+    function bestShantenInTwoSteps(discardTile, hand, pool) {
+        const newHand = hand.slice();
+        newHand[discardTile]--;
+        const counts = Array(34).fill(0);
+        pool.forEach(t => counts[t]++);
+        const tilesLeft = pool.length;
+        let best = Infinity;
+        for (let j = 0; j < 34; j++)
+            if (counts[j] > 0 && newHand[j] < 4) {
+                newHand[j]++;
+                const sh1 = shantenCached(newHand);
+                const acc2 = computeTileAcceptanceCached(newHand, tilesLeft - 1);
+                const sh2 = sh1 - (Math.max(...acc2) > 0 ? 1 : 0);
+                if (sh2 < best) best = sh2;
+                newHand[j]--;
+            }
+        return best;
+    }
+
+    function yakuPotentialDelta(discardTile, hand, doraIndicators = []) {
+        if (discardTile >= 27 && hand[discardTile] >= 3) return -2;
+        if (doraIndicators.includes(discardTile)) return +1;
+        return 0;
+    }
+
+    function safetyPenalty(discardTile, opponentsDiscardSets = []) {
+        for (const s of opponentsDiscardSets)
+            if (s.has(discardTile)) return 3;
+        const suji = [discardTile - 3, discardTile + 3];
+        if (suji.some(x => x >= 0 && x < 34 && opponentsDiscardSets.some(s => s.has(x)))) return 1;
+        return 0;
+    }
+    const W_PROB = 2.0,
+        W_LOOK2 = 2.0,
+        W_YAKU = 1.0,
+        W_SAFE = 1.0;
+
+    function evaluateDiscard(i, hand, pool) {
+        const orig = shantenCached(hand);
+        const acceptance = computeTileAcceptanceCached(hand, pool.length)[i] / pool.length;
+        const look2 = orig - bestShantenInTwoSteps(i, hand, pool);
+        const yaku = yakuPotentialDelta(i, hand);
+        const safe = safetyPenalty(i, []);
+        return W_PROB * acceptance + W_LOOK2 * look2 + W_YAKU * yaku - W_SAFE * safe;
+    }
+
+    function chooseDiscard(hand, pool) {
+        const sh = calcShanten(hand);
+        const tb = classifyBlocks(hand);
+        const singlePairs = [];
+        for (let j = 0; j < 34; j++)
+            if (hand[j] === 2) singlePairs.push(j);
+        const protectPair = singlePairs.length === 1 ? singlePairs[0] : null;
+        let candidates = [];
+        for (let i = 0; i < 34; i++) {
+            if (!hand[i]) continue;
+            const types = tb[i];
+            if (types.includes('pon') || types.includes('chi')) continue;
+            if ((i >= 31 && i <= 33) && hand[i] >= 2) continue;
+            if (protectPair !== null && i === protectPair) continue;
+            if (sh > 2) {
+                if (types.includes('ryan') || types.includes('pen')) continue;
+                const idx = i % 9;
+                if ((idx <= 6 && hand[i + 2]) || (idx >= 2 && hand[i - 2])) continue;
+            }
+            const temp = hand.slice();
+            temp[i]--;
+            if (calcShanten(temp) > sh) continue;
+            candidates.push(i);
+        }
+        if (candidates.length === 0)
+            for (let i = 0; i < 34; i++)
+                if (hand[i]) candidates.push(i);
+        const iso = candidates.filter(i => i >= 27 && tb[i].includes('sing'));
+        if (iso.length) candidates = iso;
+        let best = candidates[0],
+            bestScore = -Infinity;
+        for (const i of candidates) {
+            const sc = evaluateDiscard(i, hand, pool);
+            if (sc > bestScore) {
+                bestScore = sc;
+                best = i;
+            }
+        }
+        return best;
+    }
+
+    function generateInitial() {
+        const pool = [];
+        for (let i = 0; i < 34; i++)
+            for (let k = 0; k < 4; k++) pool.push(i);
+        const hand = Array(34).fill(0);
+        for (let n = 0; n < 13; n++) {
+            const idx = Math.floor(Math.random() * pool.length);
+            const t = pool.splice(idx, 1)[0];
+            hand[t]++;
+        }
+        return {
+            hand,
+            pool
+        };
+    }
+
+    function drawTile(pool, hand) {
+        const idx = Math.floor(Math.random() * pool.length);
+        const t = pool.splice(idx, 1)[0];
+        hand[t]++;
+        return t;
+    }
+
+    function simulate() {
+
+        const yaku = randomChoice(YAKUS);
+        const hand = generateHandForYaku(yaku);
+
+        mutateTiles(hand, randomChoice([4, 5]));
+
+        const pool = [];
+        hand.forEach((count, tile) => {
+            for (let i = 0; i < 4 - count; i++) pool.push(tile);
+        });
+
+        const discards = [];
+        while (calcShanten(hand) > 0 && discards.length < 18) {
+            drawTile(pool, hand); 
+            const d = chooseDiscard(hand, pool); 
+            hand[d]--;
+            discards.push(d);
+        }
+
+        const groups = getGroups(hand);
+        const html = groups
+            .map(g => `<div class="hand">${g.map(i => TILE_UC[i]).join('')}</div>`)
+            .join('');
+
+        mutateTiles(hand, randomChoice([4, 5]));
+        console.log(yaku)
+
+        document.getElementById('finalHand').innerHTML = formatHand(hand);
+        const container = document.getElementById('finalHand');
+        container.innerHTML = html;
+        container.style.display = 'none';
+        document.getElementById('discardsContainer').innerHTML =
+            "<div class='titleSmall'>Descartes</div><div class='hand'>" +
+            discards.map(i => TILE_UC[i]).join('') +
+            "</div>";
+
+        const impossibleContainer = document.getElementById('impossibleWaits');
+        const freq = {};
+        discards.forEach(d => { freq[d] = (freq[d] || 0) + 1; });
+        let waitsHtml = '<div class="titleSmall"></div>';
+        [...new Set(discards)].forEach(d => {
+            const tileChar = TILE_UC[d];
+            const count = freq[d];
+            let line = '';
+            // se é honor ou descartou mais de uma vez, só par
+            if (d >= 27) {
+                line = `<div>${tileChar}: ${tileChar}${tileChar}</div>`;
+            } else {
+                const waits = [];
+                const rank = d % 9;
+
+                // penchan e ryanmen
+                if (rank >= 2) waits.push(`${TILE_UC[d-2]}${TILE_UC[d-1]}`);
+                if (rank <= 6) waits.push(`${TILE_UC[d+1]}${TILE_UC[d+2]}`);
+
+                // kanchan (gap de uma)
+                if (rank >= 1 && rank <= 7) waits.push(`${TILE_UC[d-1]}${TILE_UC[d+1]}`);
+
+                // sempre inclui a espera de par (shanpon)
+                waits.push(`${tileChar}${tileChar}`);
+
+                line = `<div>${tileChar}: ${waits.join(', ')}</div>`;
+            }
+            waitsHtml += line;
+        });
+        impossibleContainer.innerHTML = waitsHtml;
+
+        // Seção de esperas prováveis
+        const allWaitsSet = new Set();
+        [0, 9, 18].forEach(s => {
+            // penchan e ryanmen
+            for (let i = s; i <= s + 7; i++) {
+                allWaitsSet.add(TILE_UC[i] + TILE_UC[i+1]);
+            }
+            // kanchan
+            for (let i = s; i <= s + 6; i++) {
+                allWaitsSet.add(TILE_UC[i] + TILE_UC[i+2]);
+            }
+        });
+        const impossibleSet = new Set();
+        discards.forEach(d => {
+            const rank = d % 9;
+            if (d < 27 && freq[d] === 1) {
+                if (rank >= 2) impossibleSet.add(TILE_UC[d-2] + TILE_UC[d-1]);
+                if (rank <= 6) impossibleSet.add(TILE_UC[d+1] + TILE_UC[d+2]);
+            }
+        });
+        const allSeqs = new Set();
+        [0,9,18].forEach(s => {
+            for (let i = s; i <= s+7; i++) allSeqs.add(`${TILE_UC[i]}${TILE_UC[i+1]}`);
+            for (let i = s; i <= s+6; i++) allSeqs.add(`${TILE_UC[i]}${TILE_UC[i+2]}`);
+        });
+        const probableSeqs = [...allWaitsSet].filter(seq => !impossibleSet.has(seq));
+
+        const discardsSet = new Set(discards);
+
+// Para cada tile i, montamos todos os padrões (Pon + Chi) que o contêm
+function getPatterns(i) {
+  const pats = [[i, i, i]];               // Pon
+  const rank = i % 9;
+  // Chi penchan/ryanmen/kanchan (dentro do mesmo naipe)
+  if (rank >= 2)          pats.push([i-2, i-1, i]);
+  if (rank >= 1 && rank <= 7) pats.push([i-1, i, i+1]);
+  if (rank <= 6)          pats.push([i, i+1, i+2]);
+  return pats;
+}
+
+// Para cada tile, conta quantos padrões estão “ruled-out” e calcula S(i)
+const list = [];
+  for (let i = 0; i < 34; i++) {
+    let sVal;
+    if (discardsSet.has(i)) {
+      sVal = 1.0;
+    } else {
+      const pats = getPatterns(i);
+      const ruledOut = pats.filter(m =>
+        m.filter(x => x !== i).every(x => discardsSet.has(x))
+      ).length;
+      sVal = ruledOut / pats.length;
+    }
+    list.push({ idx: i, score: 1-sVal });
+  }
+
+  // 2) Ordenar do maior para o menor
+  list.sort((a, b) => b.score - a.score);
+
+  // 3) Montar o HTML
+  let html2 = '';
+  list.forEach(({ idx, score }) => {
+    if (score > 0){
+      html2 += `<div>${TILE_UC[idx]}: ${score.toFixed(2)*100}%</div>`;
+    }
+    
+  });
+
+
+document.getElementById('probableWaits').innerHTML = html2;
+
+    }
+
+    simulate()
+
+    document.getElementById('showHandButton').addEventListener('click', () => {
+        document.getElementById('showHandButton').style.display = 'none';
+        document.getElementById('finalHand').style.display =
+            'block';
+        document.getElementById('discardsContainer').style.display = 'block';
+        document.getElementById("impossibleWaits").style.display = "block"
+        document.getElementById('titleSmall1').style.display = "block"
+        document.getElementById('titleSmall2').style.display = "block"
+        document.getElementById('titleSmall3').style.display = 'block';
+        document.getElementById('probableWaits').style.display = 'block';
+
+    });
+  </script>
+</body>
+</html>
