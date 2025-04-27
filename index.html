@@ -577,6 +577,27 @@
             if (calcShanten(temp) > sh) continue;
             candidates.push(i);
         }
+        // Priorizar esperas ryanmen ao atingir tenpai
+        if (sh === 1) {
+            const tenpaiCandidates = candidates.filter(i => {
+                const temp = hand.slice(); temp[i]--; return calcShanten(temp) === 0;
+            });
+            if (tenpaiCandidates.length > 0) {
+                let best = tenpaiCandidates[0];
+                let maxRyan = -1;
+                tenpaiCandidates.forEach(i => {
+                    const temp = hand.slice(); temp[i]--;
+                    const map = classifyBlocks(temp);
+                    // Conta blocos 'ryan' (cada bloco contado duas vezes) e normaliza
+                    const count = map.reduce((sum, types) => sum + types.filter(t => t === 'ryan').length, 0) / 2;
+                    if (count > maxRyan) {
+                        maxRyan = count;
+                        best = i;
+                    }
+                });
+                return best;
+            }
+        }
         if (candidates.length === 0)
             for (let i = 0; i < 34; i++)
                 if (hand[i]) candidates.push(i);
