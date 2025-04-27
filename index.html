@@ -641,24 +641,38 @@
     function simulate() {
 
         const yaku = randomChoice(YAKUS);
-        const hand = generateHandForYaku(yaku);
-
-        mutateTiles(hand, randomChoice([4, 5]));
-
-        const pool = [];
-        hand.forEach((count, tile) => {
+        var mentsuCount = 0
+        var pairCount  = 0
+        var taatsuCount = 0
+        var groups = []
+        do {
+          // 1) Geração inicial da mão e pool
+          ({ hand, pool } = generateInitial());
+          mutateTiles(hand, randomChoice([4, 5]));
+          pool.length = 0;
+          hand.forEach((count, tile) => {
             for (let i = 0; i < 4 - count; i++) pool.push(tile);
-        });
+          });
+          // 2) Discards até tenpai
+          discards = [];
+          while (calcShanten(hand) > 0 && discards.length < 18) {
+            drawTile(pool, hand);
+            const d = chooseDiscard(hand, pool);
+            hand[d]--; discards.push(d);
+          }
+          // 3) Valida estrutura da mão final
+          groups = getGroups(hand);
+          mentsuCount = groups.filter(g => g.length === 3).length;
+          pairCount  = groups.filter(g => g.length === 2 && g[0] === g[1]).length;
+          // taatsu: sequências incompletas (gaps e penchan/ryanmen)
+          taatsuCount = groups.filter(g => g.length === 2 && g[0] !== g[1]).length;
+          // mão válida se: 4 mentsu + espera de par OU 3 mentsu + par + espera de taatsu
+        } while (!(
+            (mentsuCount === 4 && pairCount === 1) ||
+            (mentsuCount === 3 && pairCount === 1 && taatsuCount >= 1)
+          ));
 
-        const discards = [];
-        while (calcShanten(hand) > 0 && discards.length < 18) {
-            drawTile(pool, hand); 
-            const d = chooseDiscard(hand, pool); 
-            hand[d]--;
-            discards.push(d);
-        }
-
-        const groups = getGroups(hand);
+        groups = getGroups(hand);
         const html = groups
             .map(g => `<div class="hand">${g.map(i => TILE_UC[i]).join('')}</div>`)
             .join('');
